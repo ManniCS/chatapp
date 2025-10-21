@@ -7,6 +7,8 @@ import styles from "./page.module.css";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  analyticsId?: string;
+  feedback?: number; // 1 = thumbs up, -1 = thumbs down
 }
 
 export default function ChatPage() {
@@ -26,6 +28,27 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const submitFeedback = async (analyticsId: string, feedback: number) => {
+    try {
+      const response = await fetch("/api/chat/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analyticsId, feedback }),
+      });
+
+      if (response.ok) {
+        // Update the message with the feedback
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.analyticsId === analyticsId ? { ...msg, feedback } : msg,
+          ),
+        );
+      }
+    } catch (error) {
+      console.error("Error submitting feedback:", error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +75,11 @@ export default function ChatPage() {
       if (response.ok) {
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: data.response },
+          {
+            role: "assistant",
+            content: data.response,
+            analyticsId: data.analyticsId,
+          },
         ]);
         setSessionId(data.sessionId);
       } else {
@@ -128,6 +155,34 @@ export default function ChatPage() {
                     }`}
                   >
                     <p className={styles.messageText}>{message.content}</p>
+                    {message.role === "assistant" && message.analyticsId && (
+                      <div className={styles.feedbackButtons}>
+                        <button
+                          onClick={() =>
+                            submitFeedback(message.analyticsId!, 1)
+                          }
+                          className={`${styles.feedbackButton} ${
+                            message.feedback === 1 ? styles.feedbackActive : ""
+                          }`}
+                          disabled={message.feedback !== undefined}
+                          title="Helpful"
+                        >
+                          👍
+                        </button>
+                        <button
+                          onClick={() =>
+                            submitFeedback(message.analyticsId!, -1)
+                          }
+                          className={`${styles.feedbackButton} ${
+                            message.feedback === -1 ? styles.feedbackActive : ""
+                          }`}
+                          disabled={message.feedback !== undefined}
+                          title="Not helpful"
+                        >
+                          👎
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

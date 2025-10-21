@@ -103,8 +103,8 @@ export async function extractTextFromFile(
 
 export function chunkText(
   text: string,
-  chunkSize: number = 1000,
-  overlap: number = 200,
+  chunkSize: number = 2000,
+  overlap: number = 400,
 ): string[] {
   const chunks: string[] = [];
   let start = 0;

@@ -216,7 +216,15 @@ export async function POST(request: Request) {
     const messages = [
       {
         role: "system",
-        content: `You are a helpful assistant that answers questions based on the provided context. If the context doesn't contain relevant information, say so politely. Context:\n\n${context}`,
+        content: `You are a helpful assistant that answers questions based on the provided context. 
+
+The context may contain OCR errors, fragmented sentences, or formatting issues from PDF extraction. Do your best to interpret the meaning despite these imperfections. Look for key terms, concepts, and ideas even if the text is incomplete or has typos.
+
+If you can identify relevant information in the context, provide a helpful answer by piecing together the available information. Only say the context doesn't contain the information if you genuinely cannot find any relevant content after attempting to interpret fragmented or imperfect text.
+
+Context:
+
+${context}`,
       },
       ...(history || []).slice(0, -1), // Exclude the last message (the current user message we just added)
       { role: "user", content: message },
@@ -248,14 +256,31 @@ export async function POST(request: Request) {
     const estimatedPromptTokens = Math.ceil(promptText.length / 4);
     const estimatedCompletionTokens = Math.ceil(chatResponse.length / 4);
 
-    // Save query analytics
+    // Detect if response contains refusal
+    const refusalPhrases = [
+      "does not contain",
+      "I don't have",
+      "cannot find",
+      "no information",
+      "I'm sorry",
+    ];
+    const containedRefusal = refusalPhrases.some((phrase) =>
+      chatResponse?.toLowerCase().includes(phrase.toLowerCase()),
+    );
+
+    // Save query analytics with quality metrics
     const analyticsId = uuidv4();
     await supabase.from("query_analytics").insert({
       id: analyticsId,
       company_id: companyId,
       query_text: message,
+      response_text: chatResponse,
+      response_length: chatResponse?.length || 0,
+      contained_refusal: containedRefusal,
       chunks_retrieved: relevantChunks?.length || 0,
       avg_similarity: avgSimilarity,
+      context_length: context.length,
+      num_merged_chunks: mergedChunks.length,
       openai_prompt_tokens: estimatedPromptTokens,
       openai_completion_tokens: estimatedCompletionTokens,
       latency_ms: latency,
@@ -285,6 +310,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       response: chatResponse,
       sessionId: currentSessionId,
+      analyticsId: analyticsId, // Return analytics ID for feedback
     });
   } catch (error) {
     console.error("Chat error:", error);

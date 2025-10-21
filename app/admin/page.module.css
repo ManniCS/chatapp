@@ -1,0 +1,239 @@
+.container {
+    min-height: 100vh;
+    background-color: #f9fafb;
+}
+
+.loading {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.loadingText {
+    font-size: 1.25rem;
+    color: #4b5563;
+}
+
+.nav {
+    background-color: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.navContent {
+    max-width: 80rem;
+    margin: 0 auto;
+    padding: 1rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.navTitle {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #111827;
+}
+
+.navActions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.analyticsButton {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    color: #1d4ed8;
+    background-color: #eff6ff;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-weight: 500;
+}
+
+.analyticsButton:hover {
+    background-color: #dbeafe;
+}
+
+.logoutButton {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    color: #374151;
+    background-color: transparent;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.logoutButton:hover {
+    background-color: #f3f4f6;
+}
+
+.main {
+    max-width: 80rem;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+}
+
+.card {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.cardTitle {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 1rem;
+}
+
+.cardDescription {
+    color: #4b5563;
+    margin-bottom: 1rem;
+}
+
+.error {
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background-color: #fee2e2;
+    color: #991b1b;
+    border-radius: 0.5rem;
+}
+
+.fileInput {
+    display: block;
+    width: 100%;
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+
+.fileInput::file-selector-button {
+    margin-right: 1rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    border: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    cursor: pointer;
+}
+
+.fileInput::file-selector-button:hover {
+    background-color: #dbeafe;
+}
+
+.fileInput:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.uploadingText {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: #2563eb;
+}
+
+.emptyState {
+    color: #6b7280;
+    text-align: center;
+    padding: 2rem;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow-x: auto;
+}
+
+.tableContainer {
+    overflow-x: auto;
+}
+
+.table thead {
+    background-color: #f9fafb;
+}
+
+.table th {
+    padding: 0.75rem 1.5rem;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.table tbody {
+    background-color: white;
+    border-top: 1px solid #e5e7eb;
+}
+
+.table tbody tr {
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.table td {
+    padding: 1rem 1.5rem;
+    white-space: nowrap;
+    font-size: 0.875rem;
+}
+
+.tableCellPrimary {
+    font-weight: 500;
+    color: #111827;
+}
+
+.tableCellSecondary {
+    color: #6b7280;
+}
+
+.deleteButton {
+    color: #dc2626;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.875rem;
+}
+
+.deleteButton:hover {
+    color: #991b1b;
+}
+
+.infoCard {
+    margin-top: 2rem;
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+}
+
+.infoTitle {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1e3a8a;
+    margin-bottom: 0.5rem;
+}
+
+.infoText {
+    color: #1d4ed8;
+    margin-bottom: 1rem;
+}
+
+.infoCodeBlock {
+    background-color: white;
+    padding: 0.75rem;
+    border-radius: 0.25rem;
+    border: 1px solid #93c5fd;
+}
+
+.infoCode {
+    font-size: 0.875rem;
+    color: #1f2937;
+    font-family: "Courier New", monospace;
+}

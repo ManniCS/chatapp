@@ -46,19 +46,61 @@ export async function POST(request: Request) {
       queryEmbedding.length,
     );
 
-    // Search for relevant document chunks using Supabase's vector search
-    console.log(
-      "[POST /api/chat] Searching for relevant chunks with threshold: 0.7, count: 5",
-    );
-    const { data: relevantChunks, error: searchError } = await supabase.rpc(
-      "match_documents",
-      {
+    // Configure search mode based on environment variables
+    const useHybridSearch = process.env.ENABLE_HYBRID_SEARCH === "true";
+    const useDocumentEmbeddings =
+      process.env.ENABLE_DOCUMENT_EMBEDDINGS === "true";
+
+    let relevantChunks, searchError;
+
+    if (useHybridSearch && useDocumentEmbeddings) {
+      // Phase 2: Hybrid search WITH document-level filtering
+      console.log(
+        "[POST /api/chat] Using smart hybrid search with document-level embeddings",
+      );
+
+      const result = await supabase.rpc("smart_hybrid_search", {
+        query_text: message,
+        query_embedding: JSON.stringify(queryEmbedding),
+        match_threshold: 0.5,
+        match_count: 5,
+        filter_company_id: companyId,
+        document_similarity_threshold: 0.6, // Document-level filtering
+        bm25_weight: 0.3, // 30% keyword matching
+        vector_weight: 0.7, // 70% semantic similarity
+      });
+      relevantChunks = result.data;
+      searchError = result.error;
+    } else if (useHybridSearch) {
+      // Phase 1: Hybrid search WITHOUT document filtering
+      console.log(
+        "[POST /api/chat] Using hybrid search (BM25 + vector) without document filtering",
+      );
+
+      const result = await supabase.rpc("hybrid_search_simple", {
+        query_text: message,
+        query_embedding: JSON.stringify(queryEmbedding),
+        match_threshold: 0.5,
+        match_count: 5,
+        filter_company_id: companyId,
+        bm25_weight: 0.3, // 30% keyword matching
+        vector_weight: 0.7, // 70% semantic similarity
+      });
+      relevantChunks = result.data;
+      searchError = result.error;
+    } else {
+      // Fallback: Vector-only search
+      console.log("[POST /api/chat] Using vector-only search");
+
+      const result = await supabase.rpc("match_documents", {
         query_embedding: JSON.stringify(queryEmbedding),
         match_threshold: 0.7,
         match_count: 5,
         filter_company_id: companyId,
-      },
-    );
+      });
+      relevantChunks = result.data;
+      searchError = result.error;
+    }
 
     if (searchError) {
       console.error("[POST /api/chat] Search error:", searchError);
@@ -75,7 +117,11 @@ export async function POST(request: Request) {
           id: chunk.id,
           document_id: chunk.document_id,
           chunk_index: chunk.chunk_index,
-          similarity: chunk.similarity?.toFixed(4) || "N/A",
+          combined_score: chunk.combined_score?.toFixed(4) || "N/A",
+          bm25_score: chunk.bm25_score?.toFixed(4) || "N/A",
+          vector_score: chunk.vector_score?.toFixed(4) || "N/A",
+          document_similarity: chunk.document_similarity?.toFixed(4) || "N/A",
+          rank_method: chunk.rank_method,
           text_preview: chunk.chunk_text?.substring(0, 150) + "...",
         });
       });
@@ -89,8 +135,8 @@ export async function POST(request: Request) {
       chunk_ids: string[];
       chunk_indices: number[];
       merged_text: string;
-      avg_similarity: number;
-      max_similarity: number;
+      avg_combined_score: number;
+      max_combined_score: number;
     }
 
     let mergedChunks: MergedChunk[] = [];
@@ -131,8 +177,8 @@ export async function POST(request: Request) {
         }
       });
 
-      // Sort merged chunks by max similarity (best match first)
-      mergedChunks.sort((a, b) => b.max_similarity - a.max_similarity);
+      // Sort merged chunks by max combined score (best match first)
+      mergedChunks.sort((a, b) => b.max_combined_score - a.max_combined_score);
 
       console.log("[POST /api/chat] Merged chunks:", mergedChunks.length);
       mergedChunks.forEach((merged, index) => {
@@ -145,8 +191,8 @@ export async function POST(request: Request) {
           document_id: merged.document_id,
           chunk_range: chunkRange,
           num_chunks: merged.chunk_ids.length,
-          max_similarity: merged.max_similarity.toFixed(4),
-          avg_similarity: merged.avg_similarity.toFixed(4),
+          max_combined_score: merged.max_combined_score.toFixed(4),
+          avg_combined_score: merged.avg_combined_score.toFixed(4),
           text_length: merged.merged_text.length,
         });
 
@@ -157,7 +203,6 @@ export async function POST(request: Request) {
             ? "..." +
               merged.merged_text.substring(merged.merged_text.length - 100)
             : "";
-
         console.log(`[POST /api/chat]   Start: "${startPreview}..."`);
         if (endPreview) {
           console.log(`[POST /api/chat]   End: "${endPreview}"`);
@@ -172,9 +217,12 @@ export async function POST(request: Request) {
         chunk_ids: chunks.map((c) => c.id),
         chunk_indices: chunks.map((c) => c.chunk_index),
         merged_text: chunks.map((c) => c.chunk_text).join(" "),
-        avg_similarity:
-          chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length,
-        max_similarity: Math.max(...chunks.map((c) => c.similarity)),
+        avg_combined_score:
+          chunks.reduce((sum, c) => sum + (c.combined_score || 0), 0) /
+          chunks.length,
+        max_combined_score: Math.max(
+          ...chunks.map((c) => c.combined_score || 0),
+        ),
       };
     }
 
@@ -187,6 +235,7 @@ export async function POST(request: Request) {
         context.length,
         "characters",
       );
+
       // Log full context for debugging with chunk boundaries
       console.log("[POST /api/chat] ========== FULL CONTEXT START ==========");
       mergedChunks.forEach((merged, index) => {
@@ -194,9 +243,8 @@ export async function POST(request: Request) {
           merged.chunk_indices.length === 1
             ? `#${merged.chunk_indices[0]}`
             : `#${merged.chunk_indices[0]}-${merged.chunk_indices[merged.chunk_indices.length - 1]}`;
-
         console.log(
-          `\n--- Chunk ${index + 1} [Range: ${chunkRange}, Similarity: ${merged.max_similarity.toFixed(4)}] ---`,
+          `\n--- Chunk ${index + 1} [Range: ${chunkRange}, Score: ${merged.max_combined_score.toFixed(4)}] ---`,
         );
         console.log(merged.merged_text);
         console.log(`--- End of Chunk ${index + 1} ---`);
@@ -232,6 +280,7 @@ ${context}`,
 
     // Get response from OpenAI
     const chatResponse = await chat(messages);
+
     const endTime = Date.now();
     const latency = endTime - startTime;
 
@@ -243,10 +292,10 @@ ${context}`,
     });
 
     // Calculate analytics metrics
-    const avgSimilarity =
+    const avgCombinedScore =
       relevantChunks && relevantChunks.length > 0
         ? relevantChunks.reduce(
-            (sum: number, chunk: any) => sum + (chunk.similarity || 0),
+            (sum: number, chunk: any) => sum + (chunk.combined_score || 0),
             0,
           ) / relevantChunks.length
         : 0;
@@ -278,7 +327,7 @@ ${context}`,
       response_length: chatResponse?.length || 0,
       contained_refusal: containedRefusal,
       chunks_retrieved: relevantChunks?.length || 0,
-      avg_similarity: avgSimilarity,
+      avg_similarity: avgCombinedScore, // Now using combined score instead of just vector similarity
       context_length: context.length,
       num_merged_chunks: mergedChunks.length,
       openai_prompt_tokens: estimatedPromptTokens,
@@ -293,19 +342,53 @@ ${context}`,
         id: uuidv4(),
         query_analytics_id: analyticsId,
         chunk_id: chunk.id,
-        similarity_score: chunk.similarity || 0,
+        similarity_score: chunk.combined_score || 0, // Store combined score
         chunk_text: chunk.chunk_text,
       }));
-
       await supabase.from("query_chunks").insert(chunkRecords);
     }
 
     console.log("[POST /api/chat] Analytics saved:", {
       analyticsId,
       chunksRetrieved: relevantChunks?.length || 0,
-      avgSimilarity: avgSimilarity.toFixed(4),
+      avgCombinedScore: avgCombinedScore.toFixed(4),
       latencyMs: latency,
     });
+
+    // Optional: Auto-score responses using heuristics (fast, free)
+    // Set AUTO_SCORE_RESPONSES=true in env to enable
+    if (process.env.AUTO_SCORE_RESPONSES === "true") {
+      // Import dynamically to avoid loading if not needed
+      const { scoreResponse } = await import("@/lib/chat/quality-scorer");
+
+      try {
+        const scores = await scoreResponse(
+          message,
+          context,
+          chatResponse || "",
+          relevantChunks?.length || 0,
+          avgCombinedScore,
+          "heuristic", // Use fast heuristic method in production
+        );
+
+        await supabase.from("response_quality_scores").insert({
+          query_analytics_id: analyticsId,
+          relevance_score: scores.relevance,
+          completeness_score: scores.completeness,
+          accuracy_score: scores.accuracy,
+          coherence_score: scores.coherence,
+          overall_score: scores.overall,
+          scoring_method: scores.method,
+        });
+
+        console.log(
+          `[POST /api/chat] Auto-scored: ${(scores.overall * 100).toFixed(1)}%`,
+        );
+      } catch (scoreError) {
+        console.error("[POST /api/chat] Auto-scoring failed:", scoreError);
+        // Don't fail the request if scoring fails
+      }
+    }
 
     return NextResponse.json({
       response: chatResponse,

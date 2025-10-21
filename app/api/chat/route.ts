@@ -136,15 +136,32 @@ export async function POST(request: Request) {
 
       console.log("[POST /api/chat] Merged chunks:", mergedChunks.length);
       mergedChunks.forEach((merged, index) => {
+        const chunkRange =
+          merged.chunk_indices.length === 1
+            ? `#${merged.chunk_indices[0]}`
+            : `#${merged.chunk_indices[0]}-${merged.chunk_indices[merged.chunk_indices.length - 1]}`;
+
         console.log(`[POST /api/chat] Merged chunk ${index + 1}:`, {
           document_id: merged.document_id,
-          original_chunks: merged.chunk_ids.length,
-          chunk_indices: merged.chunk_indices.join(", "),
+          chunk_range: chunkRange,
+          num_chunks: merged.chunk_ids.length,
           max_similarity: merged.max_similarity.toFixed(4),
           avg_similarity: merged.avg_similarity.toFixed(4),
           text_length: merged.merged_text.length,
-          text_preview: merged.merged_text.substring(0, 150) + "...",
         });
+
+        // Show start and end of the merged text
+        const startPreview = merged.merged_text.substring(0, 100);
+        const endPreview =
+          merged.merged_text.length > 200
+            ? "..." +
+              merged.merged_text.substring(merged.merged_text.length - 100)
+            : "";
+
+        console.log(`[POST /api/chat]   Start: "${startPreview}..."`);
+        if (endPreview) {
+          console.log(`[POST /api/chat]   End: "${endPreview}"`);
+        }
       });
     }
 
@@ -170,10 +187,21 @@ export async function POST(request: Request) {
         context.length,
         "characters",
       );
-      // Log full context for debugging
+      // Log full context for debugging with chunk boundaries
       console.log("[POST /api/chat] ========== FULL CONTEXT START ==========");
-      console.log(context);
-      console.log("[POST /api/chat] ========== FULL CONTEXT END ==========");
+      mergedChunks.forEach((merged, index) => {
+        const chunkRange =
+          merged.chunk_indices.length === 1
+            ? `#${merged.chunk_indices[0]}`
+            : `#${merged.chunk_indices[0]}-${merged.chunk_indices[merged.chunk_indices.length - 1]}`;
+
+        console.log(
+          `\n--- Chunk ${index + 1} [Range: ${chunkRange}, Similarity: ${merged.max_similarity.toFixed(4)}] ---`,
+        );
+        console.log(merged.merged_text);
+        console.log(`--- End of Chunk ${index + 1} ---`);
+      });
+      console.log("\n[POST /api/chat] ========== FULL CONTEXT END ==========");
     }
 
     // Get chat history

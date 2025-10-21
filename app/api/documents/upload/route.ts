@@ -65,6 +65,16 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate file size (50MB max)
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    if (file.size > MAX_FILE_SIZE) {
+      console.error("[POST /api/documents/upload] File too large:", file.size);
+      return NextResponse.json(
+        { error: "File too large. Maximum size is 50MB" },
+        { status: 400 },
+      );
+    }
+
     // Save file to local storage
     console.log("[POST /api/documents/upload] Saving file to local storage");
     const bytes = await file.arrayBuffer();

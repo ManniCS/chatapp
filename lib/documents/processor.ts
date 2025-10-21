@@ -1,88 +1,79 @@
 import fs from "fs/promises";
-import PDFParser from "pdf2json";
 import mammoth from "mammoth";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import path from "path";
+
+const execFileAsync = promisify(execFile);
 
 async function extractPDFText(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const pdfParser = new PDFParser();
+  try {
+    console.log("[extractPDFText] Loading PDF from:", filePath);
 
-    pdfParser.on("pdfParser_dataError", (errData: any) => {
-      console.error("PDF parsing error:", errData.parserError);
-      reject(errData.parserError);
-    });
+    // Security: Validate that the file path is within the uploads directory
+    const uploadsDir = path.join(process.cwd(), "uploads");
+    const normalizedPath = path.normalize(filePath);
+    if (!normalizedPath.startsWith(uploadsDir)) {
+      throw new Error("Invalid file path: outside uploads directory");
+    }
 
-    pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
-      try {
-        console.log("[extractPDFText] PDF data received");
-        console.log(
-          "[extractPDFText] Number of pages:",
-          pdfData.Pages?.length || 0,
-        );
+    // Call Python script to extract text with security constraints
+    const scriptPath = path.join(process.cwd(), "scripts", "pdf_parser.py");
 
-        let fullText = "";
+    console.log("[extractPDFText] Starting Python subprocess...");
+    const startTime = Date.now();
 
-        if (pdfData.Pages) {
-          for (let pageIdx = 0; pageIdx < pdfData.Pages.length; pageIdx++) {
-            const page = pdfData.Pages[pageIdx];
-            let pageText = "";
+    const { stdout, stderr } = await execFileAsync(
+      "python3",
+      [scriptPath, filePath],
+      {
+        timeout: 600000, // 10 minute timeout for OCR processing
+        maxBuffer: 50 * 1024 * 1024, // 50MB max output buffer
+      },
+    );
 
-            if (page.Texts) {
-              console.log(
-                `[extractPDFText] Page ${pageIdx + 1}: ${page.Texts.length} text elements`,
-              );
+    const elapsed = Date.now() - startTime;
+    console.log(`[extractPDFText] Python process completed in ${elapsed}ms`);
 
-              for (const text of page.Texts) {
-                if (text.R) {
-                  for (const run of text.R) {
-                    if (run.T) {
-                      try {
-                        const decoded = decodeURIComponent(run.T);
-                        pageText += decoded + " ";
-                      } catch (decodeError) {
-                        console.warn(
-                          `[extractPDFText] Failed to decode text on page ${pageIdx + 1}:`,
-                          run.T,
-                        );
-                        pageText += run.T + " ";
-                      }
-                    }
-                  }
-                }
-              }
-            } else {
-              console.log(
-                `[extractPDFText] Page ${pageIdx + 1}: No text elements found`,
-              );
-            }
+    if (stderr) {
+      console.error("[extractPDFText] Python stderr:", stderr);
+    }
 
-            fullText += pageText + "\n";
-            if (pageIdx < 5 || pageIdx === pdfData.Pages.length - 1) {
-              console.log(
-                `[extractPDFText] Page ${pageIdx + 1} extracted: ${pageText.length} characters`,
-              );
-            }
-          }
-        } else {
-          console.warn("[extractPDFText] No pages found in PDF data");
-        }
+    console.log(
+      `[extractPDFText] Python stdout length: ${stdout.length} bytes`,
+    );
 
-        console.log(
-          "[extractPDFText] Total extracted text length:",
-          fullText.length,
-        );
-        console.log(
-          "[extractPDFText] First 200 chars:",
-          fullText.substring(0, 200),
-        );
-        resolve(fullText);
-      } catch (err) {
-        console.error("[extractPDFText] Error in dataReady handler:", err);
-        reject(err);
-      }
-    });
+    let result;
+    try {
+      result = JSON.parse(stdout);
+    } catch (parseError) {
+      console.error(
+        "[extractPDFText] Failed to parse Python output:",
+        parseError,
+      );
+      console.error(
+        "[extractPDFText] First 1000 chars of stdout:",
+        stdout.substring(0, 1000),
+      );
+      throw new Error("Failed to parse PDF extraction result");
+    }
 
-    pdfParser.loadPDF(filePath);
-  });
+    if (!result.success) {
+      throw new Error(result.error);
+    }
+
+    console.log("[extractPDFText] Number of pages:", result.num_pages);
+    console.log(
+      "[extractPDFText] Total extracted text length:",
+      result.text_length,
+    );
+    // Note: Not logging actual content - may contain sensitive data
+
+    return result.text;
+  } catch (error) {
+    console.error("[extractPDFText] Error extracting PDF text:", error);
+    throw error;
+  }
 }
 
 export async function extractTextFromFile(
@@ -102,6 +93,7 @@ export async function extractTextFromFile(
     } else if (fileType === "text/plain") {
       return await fs.readFile(filePath, "utf-8");
     }
+
     return "";
   } catch (error) {
     console.error("Error extracting text:", error);

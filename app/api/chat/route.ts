@@ -47,16 +47,16 @@ export async function POST(request: Request) {
     );
 
     // Configure search mode based on environment variables
-    const useHybridSearch = process.env.ENABLE_HYBRID_SEARCH === "true";
     const useDocumentEmbeddings =
       process.env.ENABLE_DOCUMENT_EMBEDDINGS === "true";
+    const useBM25 = process.env.ENABLE_BM25 === "true";
 
     let relevantChunks, searchError;
 
-    if (useHybridSearch && useDocumentEmbeddings) {
-      // Phase 2: Hybrid search WITH document-level filtering
+    if (useDocumentEmbeddings) {
+      // Smart hybrid search WITH document-level filtering
       console.log(
-        "[POST /api/chat] Using smart hybrid search with document-level embeddings",
+        `[POST /api/chat] Using smart hybrid search with document-level embeddings (BM25: ${useBM25 ? "enabled" : "disabled"})`,
       );
 
       const result = await supabase.rpc("smart_hybrid_search", {
@@ -66,15 +66,15 @@ export async function POST(request: Request) {
         match_count: 5,
         filter_company_id: companyId,
         document_similarity_threshold: 0.6, // Document-level filtering
-        bm25_weight: 0.3, // 30% keyword matching
-        vector_weight: 0.7, // 70% semantic similarity
+        bm25_weight: useBM25 ? 0.3 : 0.0, // BM25 weight (0 = disabled)
+        vector_weight: useBM25 ? 0.7 : 1.0, // Vector weight (1.0 when BM25 disabled)
       });
       relevantChunks = result.data;
       searchError = result.error;
-    } else if (useHybridSearch) {
-      // Phase 1: Hybrid search WITHOUT document filtering
+    } else {
+      // Hybrid search WITHOUT document filtering
       console.log(
-        "[POST /api/chat] Using hybrid search (BM25 + vector) without document filtering",
+        `[POST /api/chat] Using hybrid search without document filtering (BM25: ${useBM25 ? "enabled" : "disabled"})`,
       );
 
       const result = await supabase.rpc("hybrid_search_simple", {
@@ -83,20 +83,8 @@ export async function POST(request: Request) {
         match_threshold: 0.5,
         match_count: 5,
         filter_company_id: companyId,
-        bm25_weight: 0.3, // 30% keyword matching
-        vector_weight: 0.7, // 70% semantic similarity
-      });
-      relevantChunks = result.data;
-      searchError = result.error;
-    } else {
-      // Fallback: Vector-only search
-      console.log("[POST /api/chat] Using vector-only search");
-
-      const result = await supabase.rpc("match_documents", {
-        query_embedding: JSON.stringify(queryEmbedding),
-        match_threshold: 0.7,
-        match_count: 5,
-        filter_company_id: companyId,
+        bm25_weight: useBM25 ? 0.3 : 0.0, // BM25 weight (0 = disabled)
+        vector_weight: useBM25 ? 0.7 : 1.0, // Vector weight (1.0 when BM25 disabled)
       });
       relevantChunks = result.data;
       searchError = result.error;
@@ -137,6 +125,12 @@ export async function POST(request: Request) {
       merged_text: string;
       avg_combined_score: number;
       max_combined_score: number;
+      max_bm25_score: number;
+      max_vector_score: number;
+      max_document_similarity: number;
+      avg_bm25_score: number;
+      avg_vector_score: number;
+      avg_document_similarity: number;
     }
 
     let mergedChunks: MergedChunk[] = [];
@@ -223,6 +217,20 @@ export async function POST(request: Request) {
         max_combined_score: Math.max(
           ...chunks.map((c) => c.combined_score || 0),
         ),
+        max_bm25_score: Math.max(...chunks.map((c) => c.bm25_score || 0)),
+        max_vector_score: Math.max(...chunks.map((c) => c.vector_score || 0)),
+        max_document_similarity: Math.max(
+          ...chunks.map((c) => c.document_similarity || 0),
+        ),
+        avg_bm25_score:
+          chunks.reduce((sum, c) => sum + (c.bm25_score || 0), 0) /
+          chunks.length,
+        avg_vector_score:
+          chunks.reduce((sum, c) => sum + (c.vector_score || 0), 0) /
+          chunks.length,
+        avg_document_similarity:
+          chunks.reduce((sum, c) => sum + (c.document_similarity || 0), 0) /
+          chunks.length,
       };
     }
 
@@ -243,8 +251,21 @@ export async function POST(request: Request) {
           merged.chunk_indices.length === 1
             ? `#${merged.chunk_indices[0]}`
             : `#${merged.chunk_indices[0]}-${merged.chunk_indices[merged.chunk_indices.length - 1]}`;
+
+        // Build score breakdown string
+        const scoreBreakdown = [
+          `Combined: ${merged.max_combined_score.toFixed(4)}`,
+          `Vector: ${merged.max_vector_score.toFixed(4)}`,
+          useBM25 ? `BM25: ${merged.max_bm25_score.toFixed(4)}` : null,
+          merged.max_document_similarity > 0
+            ? `Doc: ${merged.max_document_similarity.toFixed(4)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(", ");
+
         console.log(
-          `\n--- Chunk ${index + 1} [Range: ${chunkRange}, Score: ${merged.max_combined_score.toFixed(4)}] ---`,
+          `\n--- Chunk ${index + 1} [Range: ${chunkRange}, ${scoreBreakdown}] ---`,
         );
         console.log(merged.merged_text);
         console.log(`--- End of Chunk ${index + 1} ---`);
